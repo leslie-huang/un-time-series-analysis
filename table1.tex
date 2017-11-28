@@ -1,0 +1,33 @@
+\documentclass[]{article}
+\setlength{\pdfpagewidth}{8.5in} \setlength{\pdfpageheight}{11in}
+\begin{document}
+\begin{tabular}{lccc}
+\multicolumn{4}{c}{Table 1: All resolutions} \\ \hline
+ & (1) & (2) & (3) \\
+VARIABLES & 1 & 2 & 3 \\ \hline
+ &  &  &  \\
+speech\_proportion & -0.036*** & -0.036*** & -0.036*** \\
+ & (0.001) & (0.001) & (0.001) \\
+temp\_member & 0.000 & 0.000 & 0.000 \\
+ & (0.000) & (0.000) & (0.001) \\
+log\_gdp & 0.000 & 0.000 & 0.000 \\
+ & (0.000) & (0.000) & (0.000) \\
+0b.temp\_member\#co.speech\_proportion &  & 0.000 & 0.000 \\
+ &  & (0.000) & (0.000) \\
+1.temp\_member\#c.speech\_proportion &  & -0.002 & -0.002 \\
+ &  & (0.002) & (0.002) \\
+0b.temp\_member\#co.log\_gdp &  &  & 0.000 \\
+ &  &  & (0.000) \\
+1.temp\_member\#c.log\_gdp &  &  & -0.000 \\
+ &  &  & (0.000) \\
+
+Constant &  & 0.031*** & 0.031*** \\
+ &  & (0.002) & (0.002) \\
+ &  &  &  \\
+Observations & 155,124 & 155,124 & 155,124 \\
+R-squared & 0.026 & 0.026 & 0.026 \\
+ Number of country\_topic & 6,912 & 6,912 & 6,912 \\ \hline
+\multicolumn{4}{c}{ Standard errors in parentheses} \\
+\multicolumn{4}{c}{ *** p$<$0.01, ** p$<$0.05, * p$<$0.1} \\
+\end{tabular}
+\end{document}
