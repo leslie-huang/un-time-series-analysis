@@ -11,15 +11,15 @@ set.seed(1234)
 libraries <- c("foreign", "utils", "dplyr", "plyr", "devtools", "quanteda", "stringi", "topicmodels", "ldatuning", "lda", "plm", "stargazer", "ggplot2", "tseries", "lmtest", "car")
 lapply(libraries, require, character.only=TRUE)
 
-data <- read.csv("../un-jupyter-coding-merging/data_by_country_year_topic_voting_only.csv", stringsAsFactors = TRUE)
+data <- read.csv("../un-jupyter-coding-merging/data_by_country_year_topic_all.csv", stringsAsFactors = TRUE)
 
-# filter to voting resolutions
+# Some important vals
+special_topics <- c("climate_change", "development", "island_nations", "mideast_peace", "global_trade", "africa_sec")
 
+# Data permutations
 data$log_gdp <- log(data$gdp)
 data$speech_pct <- data$speech_proportion * 100
 data$agenda_pct <- data$proportion_of_agenda * 100
-data$country_topic <- with(data, paste(country, topic, sep = "_"))
-data$country_topic <- as.factor(data$country_topic)
 data$sc_membership <- as.factor(data$sc_membership)
 
 # do first difference of variables
@@ -30,6 +30,39 @@ data$agenda_pct_diff <- c(0, diff(data$agenda_pct, lag = 1, differences = 1) )
 
 data$speech_pct_logit <- logit(data$speech_pct, percents = TRUE)
 data$agenda_pct_logit <- logit(data$agenda_pct, percents = TRUE)
+
+###########################################################################
+# Calc new measures within topic
+data_climate <- data[data$topic == "climate_change", ]
+
+for (year in unique(data_climate$year)) {
+  data_climate$mean_speech_pct <- mean(data_climate[data_climate$year == year, ]$speech_pct)
+  data_climate$median_speech_pct <- median(data_climate[data_climate$year == year, ]$speech_pct)
+  
+}
+
+data_climate <- dplyr::mutate(data_climate, speech_pct_diff_from_median = median_speech_pct - speech_pct)
+
+# Function
+# Calculate each country's speech pct difference from the median and mean for that year
+
+for (topic_name in special_topics) {
+  df_subset <- data[data$topic == topic_name, ]
+  # name for later 
+  df_name <- paste("data", topic_name, sep = "_")
+  
+  for (year in unique(df_subset$year)) {
+    df_subset$mean_speech_pct <- mean(df_subset[df_subset$year == year, ]$speech_pct)
+    df_subset$median_speech_pct <- median(df_subset[df_subset$year == year, ]$speech_pct)
+    
+  }
+  
+  df_subset <- dplyr::mutate(df_subset, speech_pct_diff_from_median = median_speech_pct - speech_pct)
+  df_subset <- dplyr::mutate(df_subset, speech_pct_diff_from_mean = mean_speech_pct - speech_pct)
+  assign(df_name, df_subset)
+  
+}
+
 #######################################
 # Function to run ALL the panel data tests for a given formula and data subset
 
@@ -159,7 +192,6 @@ all_panel_tests(f3_lgt, f3_without_time_fe_lgt, data[data$topic == "global_trade
 ################################################################################################
 # Now run all the models for specific topics
 
-special_topics <- c("climate_change", "development", "island_nations", "mideast_peace", "global_trade", "africa_sec")
 
 for (topic in special_topics) {
   
