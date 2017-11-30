@@ -22,43 +22,35 @@ data$speech_pct <- data$speech_proportion * 100
 data$agenda_pct <- data$proportion_of_agenda * 100
 data$sc_membership <- as.factor(data$sc_membership)
 
-# do first difference of variables
-data$log_gdp_diff <- c(0, diff(data$log_gdp, lag = 1, differences = 1) )
-data$speech_pct_diff <- c(0, diff(data$speech_pct, lag = 1, differences = 1) )
-data$speech_proportion_diff <- c(0, diff(data$speech_proportion, lag = 1, differences = 1) )
-data$agenda_pct_diff <- c(0, diff(data$agenda_pct, lag = 1, differences = 1) )
-
-data$speech_pct_logit <- logit(data$speech_pct, percents = TRUE)
-data$agenda_pct_logit <- logit(data$agenda_pct, percents = TRUE)
+# do first difference of variables and logit transformation
+# data$log_gdp_diff <- c(0, diff(data$log_gdp, lag = 1, differences = 1) )
+# data$speech_pct_diff <- c(0, diff(data$speech_pct, lag = 1, differences = 1) )
+# data$speech_proportion_diff <- c(0, diff(data$speech_proportion, lag = 1, differences = 1) )
+# data$agenda_pct_diff <- c(0, diff(data$agenda_pct, lag = 1, differences = 1) )
+# 
+# data$speech_pct_logit <- logit(data$speech_pct, percents = TRUE)
+# data$agenda_pct_logit <- logit(data$agenda_pct, percents = TRUE)
 
 ###########################################################################
 # Calc new measures within topic
-data_climate <- data[data$topic == "climate_change", ]
 
-for (year in unique(data_climate$year)) {
-  data_climate$mean_speech_pct <- mean(data_climate[data_climate$year == year, ]$speech_pct)
-  data_climate$median_speech_pct <- median(data_climate[data_climate$year == year, ]$speech_pct)
-  
-}
-
-data_climate <- dplyr::mutate(data_climate, speech_pct_diff_from_median = median_speech_pct - speech_pct)
-
-# Function
 # Calculate each country's speech pct difference from the median and mean for that year
-
 for (topic_name in special_topics) {
-  df_subset <- data[data$topic == topic_name, ]
-  # name for later 
-  df_name <- paste("data", topic_name, sep = "_")
+  df_subset <- data[data$topic == topic_name, ] # subset to just one topic
+  df_name <- paste("data", topic_name, sep = "_")  # name for later 
   
-  for (year in unique(df_subset$year)) {
-    df_subset$mean_speech_pct <- mean(df_subset[df_subset$year == year, ]$speech_pct)
-    df_subset$median_speech_pct <- median(df_subset[df_subset$year == year, ]$speech_pct)
-    
-  }
+  # Calculate yearly means and medians
+  df_subset <- dplyr::group_by(df_subset, year)
+  df_subset <- dplyr::mutate(df_subset, yearly_mean_speech_pct = mean(speech_pct))
+  df_subset <- dplyr::mutate(df_subset, yearly_sd_speech_pct = sd(speech_pct))
+  df_subset <- dplyr::mutate(df_subset, yearly_median_speech_pct = median(speech_pct))
   
-  df_subset <- dplyr::mutate(df_subset, speech_pct_diff_from_median = median_speech_pct - speech_pct)
-  df_subset <- dplyr::mutate(df_subset, speech_pct_diff_from_mean = mean_speech_pct - speech_pct)
+  # calculate diff from that year's median and median for each obs
+  df_subset <- dplyr::mutate(df_subset, speech_pct_diff_from_median = yearly_median_speech_pct - speech_pct)
+  df_subset <- dplyr::mutate(df_subset, speech_pct_diff_from_mean = yearly_mean_speech_pct - speech_pct)
+  # and z-score
+  df_subset <- dplyr::mutate(df_subset, speech_pct_zscore = (speech_pct - yearly_mean_speech_pct ) / yearly_sd_speech_pct)
+  
   assign(df_name, df_subset)
   
 }
