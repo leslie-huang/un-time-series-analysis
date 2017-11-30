@@ -291,12 +291,37 @@ for (topic in special_topics) {
 
 topics <- unique(lapply(data$topic, as.character))
 
-for (topic in topics) {
+for (topic in special_topics) {
   
-  plot_title <- paste("% of Agenda about ", topic, " as a Function of Speeches", sep = "")
+  plot_title <- paste("% of Agenda about ", topic, " as a Function of Difference from Yearly Mean of Speech Pct", sep = "")
   
-  pdf(file = paste(topic, "_graph.pdf",  sep = ""), width = 11, height = 8)
-  plot(agenda_pct ~ speech_pct, data = data[data$topic == topic, ], xlim = c(0,50), ylab = "Percent of agenda", xlab = "Percent of speech", main = plot_title)
+  pdf(file = paste(topic, "_diff_mean.pdf",  sep = ""), width = 11, height = 8)
+  data_name <- paste("data", topic, sep = "_")
+  plot(agenda_pct ~ speech_pct_diff_from_mean, data = get(data_name), ylab = "Percent of agenda", xlab = "Difference from Yearly Mean of Speech Pct", main = plot_title)
+  dev.off()
+  
+}
+
+
+for (topic in special_topics) {
+  
+  plot_title <- paste("% of Agenda about ", topic, " as a Function of Difference from Yearly Median of Speech Pct", sep = "")
+  
+  pdf(file = paste(topic, "_diff_median.pdf",  sep = ""), width = 11, height = 8)
+  data_name <- paste("data", topic, sep = "_")
+  plot(agenda_pct ~ speech_pct_diff_from_median, data = get(data_name), ylab = "Percent of agenda", xlab = "Difference from Yearly Median of Speech Pct", main = plot_title)
+  dev.off()
+  
+}
+
+
+for (topic in special_topics) {
+  
+  plot_title <- paste("% of Agenda about ", topic, " as a Function of Z-score of Speech Pct", sep = "")
+  
+  pdf(file = paste(topic, "_diff_zscore.pdf",  sep = ""), width = 11, height = 8)
+  data_name <- paste("data", topic, sep = "_")
+  plot(agenda_pct ~ speech_pct_zscore, data = get(data_name), ylab = "Percent of agenda", xlab = "Difference from Z-score of Speech Pct (calculated on yearly basis)", main = plot_title)
   dev.off()
   
 }
