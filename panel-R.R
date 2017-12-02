@@ -13,24 +13,31 @@ lapply(libraries, require, character.only=TRUE)
 
 data <- read.csv("../un-jupyter-coding-merging/data_by_country_year_topic_all.csv", stringsAsFactors = TRUE)
 
-# Some important vals
-special_topics <- c("climate_change", "development", "island_nations", "mideast_peace", "global_trade", "africa_sec")
+# Indices for the plm models
+ct_index <- c("country_topic","year")
+c_index <- c("country", "year")
+
+# Some important topics
+special_topics <- c("climate_envir", "development", "island_nations", "mideast_peace", "global_trade", "africa_sec", "drugs", "afghan_security", "LLDCs", "women_children", "arms_treaties", "food_crisis", "demo_elec", "intl_law")
+topics <- unique(data$topic)
 
 # Data permutations
 data$log_gdp <- log(data$gdp)
 data$speech_pct <- data$speech_proportion * 100
 data$agenda_pct <- data$proportion_of_agenda * 100
 data$sc_membership <- as.factor(data$sc_membership)
+data$year <- as.factor(data$year)
 
-# do first difference of variables and logit transformation
-# data$log_gdp_diff <- c(0, diff(data$log_gdp, lag = 1, differences = 1) )
-# data$speech_pct_diff <- c(0, diff(data$speech_pct, lag = 1, differences = 1) )
-# data$speech_proportion_diff <- c(0, diff(data$speech_proportion, lag = 1, differences = 1) )
-# data$agenda_pct_diff <- c(0, diff(data$agenda_pct, lag = 1, differences = 1) )
-# 
-# data$speech_pct_logit <- logit(data$speech_pct, percents = TRUE)
-# data$agenda_pct_logit <- logit(data$agenda_pct, percents = TRUE)
+# make another copy
+data_by_type <- as.data.table(data)
 
+# filter to just speech_pct exceeding 2%
+#data <- dplyr::filter(data, speech_pct > 2)
+
+# filter to just non permanent members
+data <- dplyr::filter(data, sc_membership != "permanent")
+
+###########################################################################
 ###########################################################################
 # Calc new measures within topic
 
@@ -41,21 +48,54 @@ for (topic_name in special_topics) {
   
   # Calculate yearly means and medians
   df_subset <- dplyr::group_by(df_subset, year)
-  df_subset <- dplyr::mutate(df_subset, yearly_mean_speech_pct = mean(speech_pct))
-  df_subset <- dplyr::mutate(df_subset, yearly_sd_speech_pct = sd(speech_pct))
-  df_subset <- dplyr::mutate(df_subset, yearly_median_speech_pct = median(speech_pct))
+  df_subset <- dplyr::mutate(df_subset, yearly_mean_speech_proportion = mean(speech_proportion))
+  df_subset <- dplyr::mutate(df_subset, yearly_sd_speech_proportion = sd(speech_proportion))
+  df_subset <- dplyr::mutate(df_subset, yearly_median_speech_proportion = median(speech_proportion))
   
-  # calculate diff from that year's median and median for each obs
-  df_subset <- dplyr::mutate(df_subset, speech_pct_diff_from_median = yearly_median_speech_pct - speech_pct)
-  df_subset <- dplyr::mutate(df_subset, speech_pct_diff_from_mean = yearly_mean_speech_pct - speech_pct)
+  # calculate diff from that year's mean and median for each obs
+  df_subset <- dplyr::mutate(df_subset, speech_proportion_diff_from_median = yearly_median_speech_proportion - speech_proportion)
+  df_subset <- dplyr::mutate(df_subset, speech_proportion_diff_from_mean = yearly_mean_speech_proportion - speech_proportion)
   # and z-score
-  df_subset <- dplyr::mutate(df_subset, speech_pct_zscore = (speech_pct - yearly_mean_speech_pct ) / yearly_sd_speech_pct)
+  df_subset <- dplyr::mutate(df_subset, speech_proportion_zscore = (speech_proportion - yearly_mean_speech_proportion ) / yearly_sd_speech_proportion)
+  
+  # calculate diff from country-mean and country-median
+  df_subset <- dplyr::ungroup(df_subset)
+  df_subset <- dplyr::group_by(df_subset, country)
+  df_subset <- dplyr::mutate(df_subset, country_mean_speech_proportion = mean(speech_proportion))
+  df_subset <- dplyr::mutate(df_subset, country_sd_speech_proportion = sd(speech_proportion))
+  df_subset <- dplyr::mutate(df_subset, country_median_speech_proportion = median(speech_proportion))
+  
+  df_subset <- dplyr::mutate(df_subset, speech_proportion_diff_from_country_median = country_median_speech_proportion - speech_proportion)
+  df_subset <- dplyr::mutate(df_subset, speech_proportion_diff_from_country_mean = country_mean_speech_proportion - speech_proportion)
+  # and z-score
+  df_subset <- dplyr::mutate(df_subset, speech_proportion_country_zscore = (speech_proportion - country_mean_speech_proportion ) / country_sd_speech_proportion)
+  
+  
+  # dummy for 50 percentile
+  df_subset <- dplyr::mutate(df_subset, above_yearly_median = speech_proportion > yearly_median_speech_proportion)
+  #dummy for above mean
+  df_subset <- dplyr::mutate(df_subset, above_yearly_mean = speech_proportion > yearly_mean_speech_proportion)
+  
   
   assign(df_name, df_subset)
   
 }
 
-#######################################
+
+###########################################################################
+###########################################################################
+# Get avg speech pct for each level of sc_membership for each topic/year
+
+data_by_type <- within(data_by_type, sc_membership <- relevel(sc_membership, ref = "never"))
+
+data_leveled <- data_by_type[, .(mean(speech_pct), mean(agenda_pct), median(speech_pct)), by = .(topic, year, sc_membership)]
+colnames(data_leveled) <- c("topic", "year", "sc_membership", "mean_speech_pct", "mean_agenda_pct", "median_speech_pct")
+
+summary(lm(mean_agenda_pct ~ median_speech_pct + median_speech_pct * sc_membership, data = data_leveled))
+summary(plm(mean_agenda_pct ~ median_speech_pct + median_speech_pct * sc_membership, data = data_leveled, index = "year", model = "within"))
+
+###########################################################################
+###########################################################################
 # Function to run ALL the panel data tests for a given formula and data subset
 
 all_panel_tests <- function(formula_spec, formula_spec_without_time_fe, data_subset, indices) {
@@ -76,7 +116,7 @@ all_panel_tests <- function(formula_spec, formula_spec_without_time_fe, data_sub
   print("Check that FE is better than OLS using F test using pFtest:")
   print(pFtest(plm.reg, ols.reg))
   print("and pooled OLS using plmtest Lagrange Multiplier Test: ")
-  print(plmtest(plm.pool, type="bp")))
+  print(plmtest(plm.pool, type="bp"))
   print("-----------------------------------------")
   
   # Decide between FE and RE
@@ -94,7 +134,7 @@ all_panel_tests <- function(formula_spec, formula_spec_without_time_fe, data_sub
   print(pFtest(plm.reg.notime, plm.reg))
   
   print("and with Lagrange Multiplier test: ")
-  print(plmtest(plm.reg, effect = "time", type="bp")) )
+  print(plmtest(plm.reg, effect = "time", type="bp")) 
   
   print("-----------------------------------------")
   
@@ -125,7 +165,7 @@ all_panel_tests <- function(formula_spec, formula_spec_without_time_fe, data_sub
 
 # Formulas
 
-f <- agenda_pct ~ speech_pct + log_gdp + temp_member + factor(year)
+f <- agenda_pct ~ speech_proportion + log_gdp + temp_member + factor(year)
 f_without_time_fe <- agenda_pct ~ speech_pct + log_gdp + temp_member
 
 f2 <- agenda_pct ~ speech_proportion + log_gdp + sc_membership + sc_membership * speech_proportion + factor(year)
@@ -136,58 +176,27 @@ f3_without_time_fe <- agenda_pct ~ speech_proportion + log_gdp + sc_membership +
 
 f4 <- agenda_pct ~ speech_proportion + log_gdp + sc_membership + sc_membership * speech_proportion + sc_membership * log_gdp + log_gdp * speech_proportion + factor(year)
 
-# Formulas with first difference
-
-f_diff <- agenda_pct_diff ~ speech_proportion_diff + log_gdp + temp_member + factor(year)
-f_without_time_fe_diff <- agenda_pct_diff ~ speech_proportion_diff + log_gdp + temp_member
-
-f2_diff <- agenda_pct_diff ~ speech_proportion_diff + log_gdp_diff + sc_membership + sc_membership * speech_proportion_diff + factor(year)
-f2_without_time_fe_diff <- agenda_pct_diff ~ speech_proportion_diff + log_gdp_diff + sc_membership + sc_membership * speech_proportion_diff
-
-f3_diff <- agenda_pct_diff ~ speech_proportion_diff + log_gdp_diff + sc_membership + sc_membership * speech_proportion_diff + sc_membership * log_gdp_diff + factor(year)
-f3_without_time_fe_diff <- agenda_pct_diff ~ speech_proportion_diff + log_gdp_diff + sc_membership + sc_membership * speech_proportion_diff + sc_membership * log_gdp_diff
-
-
-f4_diff <- agenda_pct_diff ~ speech_proportion_diff + log_gdp_diff + sc_membership + sc_membership * speech_proportion_diff + sc_membership * log_gdp_diff + log_gdp_diff * speech_proportion_diff + factor(year)
-
-
-# Formulas with logit X and Y
-
-f_lgt <- agenda_pct_logit ~ speech_pct_logit + log_gdp + temp_member + factor(year)
-f_without_time_fe_lgt <- agenda_pct_logit ~ speech_pct_logit + log_gdp + temp_member
-
-f2_lgt <- agenda_pct_logit ~ speech_pct_logit  + log_gdp + sc_membership + sc_membership * speech_pct_logit + factor(year)
-f2_without_time_fe_lgt <- agenda_pct_logit ~ speech_pct_logit + log_gdp + sc_membership + sc_membership * speech_pct_logit
-
-f3_lgt <- agenda_pct_logit ~ speech_pct_logit  + log_gdp + sc_membership + sc_membership * speech_pct_logit + sc_membership * log_gdp + factor(year)
-f3_without_time_fe_lgt <- agenda_pct_logit ~ speech_pct_logit  + log_gdp + sc_membership + sc_membership * speech_pct_logit + sc_membership * log_gdp
-
-f4_lgt <- agenda_pct_logit ~ speech_pct_logit + log_gdp + sc_membership + sc_membership * speech_pct_logit + sc_membership * log_gdp + log_gdp * speech_pct_logit + factor(year)
-
 
 ################################
 # Run it with country-topic spec
-ct_index <- c("country_topic","year")
+
 all_panel_tests(f, f_without_time_fe, data, ct_index)
 
 ################################
 # Topic-specific printout
-c_index <- c("country", "year")
 
 # with differencing
-all_panel_tests(f3_diff, f3_without_time_fe_diff, data[data$topic == "climate_change", ], c_index)
+all_panel_tests(f3, f3_without_time_fe, data[data$topic == "climate_change", ], c_index)
 
-# with logit transformation
-all_panel_tests(f3_lgt, f3_without_time_fe_lgt, data[data$topic == "global_trade", ], c_index)
+######################################################################################
+######################################################################################
+# Now run all the models for specific topics and output tables
 
-################################################################################################
-################################################################################################
-# Now run all the models for specific topics
-
+# FE, untransformed speech_proportion
 
 for (topic in special_topics) {
   
-  data_sub <- data[data$topic == topic, ]
+  data_sub <- get(paste("data", topic, sep = "_"))
   
   # go through the different specifications
   f <- agenda_pct ~ speech_proportion + log_gdp + sc_membership + factor(year)
@@ -202,12 +211,95 @@ for (topic in special_topics) {
 
   
    # output the table for this topic
-  stargazer(fe_model_f, fe_model_f2, fe_model_f3, fe_model_f4, digits = 3, title = paste("Effect of Speeches on Percent of Agenda about ", topic, sep = " "), single.row = FALSE, dep.var.labels = "Percent of Agenda", covariate.labels = c("Speech pct.", "Log GDP", "Not serving on SC", "Speech Pct. * Not serving", "Speech Pct. * Perm. member", "Speech Pct. * Temp. member", "Log GDP * Not serving", "Log GDP * Perm. member", "Log GDP * Temp. member", "Speech Pct. * Log GDP"))
+  stargazer(fe_model_f, fe_model_f2, fe_model_f3, fe_model_f4, digits = 3, title = paste("Effect of Speeches on Percent of Agenda about ", topic, sep = " "), single.row = FALSE, dep.var.labels = "Percent of Agenda" #, 
+            #covariate.labels = c("Speech pct.", "Log GDP", "Not serving on SC", "Speech Pct. * Not serving", "Speech Pct. * Perm. member", "Speech Pct. * Temp. member", "Log GDP * Not serving", "Log GDP * Perm. member", "Log GDP * Temp. member", "Speech Pct. * Log GDP")
+            )
+}
+
+######################################################################################
+######################################################################################
+
+# FE, X = z-score
+for (topic in special_topics) {
+  
+  data_sub <- get(paste("data", topic, sep = "_"))
+  # try with top 50 percentile
+  data_sub <- data_sub[data_sub$above_yearly_median == TRUE, ]
+  
+  # go through the different specifications
+  f <- agenda_pct ~ speech_proportion_zscore + log_gdp + sc_membership + factor(year)
+  f2 <- agenda_pct ~ speech_proportion_zscore + log_gdp + sc_membership + sc_membership * speech_proportion_zscore + factor(year)
+  f3 <- agenda_pct ~ speech_proportion_zscore + log_gdp + sc_membership + sc_membership * speech_proportion_zscore + sc_membership * log_gdp + factor(year)
+  f4 <- agenda_pct ~ speech_proportion_zscore + log_gdp + sc_membership + sc_membership * speech_proportion_zscore + sc_membership * log_gdp + log_gdp * speech_proportion_zscore + factor(year)
+  
+  fe_model_f <- plm(formula = f, data = data_sub, index = c_index, effect = "twoways")
+  fe_model_f2 <- plm(formula = f2, data = data_sub, index = c_index, effect = "twoways")
+  fe_model_f3 <- plm(formula = f3, data = data_sub, index = c_index, effect = "twoways")
+  fe_model_f4 <- plm(formula = f4, data = data_sub, index = c_index, effect = "twoways")
+  
+  
+  # output the table for this topic
+  stargazer(fe_model_f, fe_model_f2, fe_model_f3, fe_model_f4, digits = 3, title = paste("Effect of Speeches on Percent of Agenda about ", topic, sep = " "), single.row = FALSE, dep.var.labels = "Percent of Agenda"#, 
+            #covariate.labels = c("Speech Z-Score", "Log GDP", "Not serving on SC", "Speech Z-Score * Not serving", "Speech Z-Score * Perm. member", "Speech Z-Score * Temp. member", "Log GDP * Not serving", "Log GDP * Perm. member", "Log GDP * Temp. member", "Speech Z-Score * Log GDP")
+            )
+}
+
+######################################################################################
+# FE, X = % above median
+for (topic in special_topics) {
+  
+  data_sub <- get(paste("data", topic, sep = "_"))
+  # try with top 50 percentile
+  data_sub <- data_sub[data_sub$above_yearly_median == TRUE, ]
+  
+  # go through the different specifications
+  f <- agenda_pct ~ speech_proportion_diff_from_median + log_gdp + sc_membership + factor(year)
+  f2 <- agenda_pct ~ speech_proportion_diff_from_median + log_gdp + sc_membership + sc_membership * speech_proportion_diff_from_median + factor(year)
+  f3 <- agenda_pct ~ speech_proportion_diff_from_median + log_gdp + sc_membership + sc_membership * speech_proportion_diff_from_median + sc_membership * log_gdp + factor(year)
+  f4 <- agenda_pct ~ speech_proportion_diff_from_median + log_gdp + sc_membership + sc_membership * speech_proportion_diff_from_median + sc_membership * log_gdp + log_gdp * speech_proportion_diff_from_median + factor(year)
+  
+  fe_model_f <- plm(formula = f, data = data_sub, index = c_index, effect = "twoways")
+  fe_model_f2 <- plm(formula = f2, data = data_sub, index = c_index, effect = "twoways")
+  fe_model_f3 <- plm(formula = f3, data = data_sub, index = c_index, effect = "twoways")
+  fe_model_f4 <- plm(formula = f4, data = data_sub, index = c_index, effect = "twoways")
+  
+  
+  # output the table for this topic
+  stargazer(fe_model_f, fe_model_f2, fe_model_f3, fe_model_f4, digits = 3, title = paste("Effect of Speeches on Percent of Agenda about ", topic, sep = " "), single.row = FALSE, dep.var.labels = "Percent of Agenda" #, covariate.labels = c("Speech Pct above Median", "Log GDP", "Not serving on SC", "Speech Pct above Median * Not serving", "Speech Pct above Median * Perm. member", "Speech Pct above Median * Temp. member", "Log GDP * Not serving", "Log GDP * Perm. member", "Log GDP * Temp. member", "Speech Pct above Median * Log GDP")
+            )
+}
+
+
+
+######################################################################################
+# Run with X = % above country median
+for (topic in special_topics) {
+  
+  data_sub <- get(paste("data", topic, sep = "_"))
+  # try with top 50 percentile
+  #data_sub <- data_sub[data_sub$above_yearly_median == TRUE, ]
+  
+  # go through the different specifications
+  f <- agenda_pct ~ speech_proportion_diff_from_country_median ^ 2 + log_gdp + sc_membership + factor(year)
+  f2 <- agenda_pct ~ speech_proportion_diff_from_country_median ^ 2 + log_gdp + sc_membership + sc_membership * speech_proportion_diff_from_country_median + factor(year)
+  f3 <- agenda_pct ~ speech_proportion_diff_from_country_median ^ 2 + log_gdp + sc_membership + sc_membership * speech_proportion_diff_from_country_median + sc_membership * log_gdp + factor(year)
+  f4 <- agenda_pct ~ speech_proportion_diff_from_country_median ^ 2 + log_gdp + sc_membership + sc_membership * speech_proportion_diff_from_country_median + sc_membership * log_gdp + log_gdp * speech_proportion_diff_from_country_median + factor(year)
+  
+  fe_model_f <- plm(formula = f, data = data_sub, index = c_index, effect = "twoways")
+  fe_model_f2 <- plm(formula = f2, data = data_sub, index = c_index, effect = "twoways")
+  fe_model_f3 <- plm(formula = f3, data = data_sub, index = c_index, effect = "twoways")
+  fe_model_f4 <- plm(formula = f4, data = data_sub, index = c_index, effect = "twoways")
+  
+  
+  # output the table for this topic
+  stargazer(fe_model_f, fe_model_f2, fe_model_f3, fe_model_f4, digits = 3, title = paste("Effect of Speeches on Percent of Agenda about ", topic, sep = " "), single.row = FALSE, dep.var.labels = "Percent of Agenda" #, covariate.labels = c("Speech Pct above Median", "Log GDP", "Not serving on SC", "Speech Pct above Median * Not serving", "Speech Pct above Median * Perm. member", "Speech Pct above Median * Temp. member", "Log GDP * Not serving", "Log GDP * Perm. member", "Log GDP * Temp. member", "Speech Pct above Median * Log GDP")
+  )
   
 }
 
-################################################################################################
-################################################################################################
+
+######################################################################################
+######################################################################################
 # Pooled OLS
 for (topic in special_topics) {
   
@@ -231,97 +323,55 @@ for (topic in special_topics) {
 }
 
 
-################################################################################################
-# FE with First difference
+######################################################################################
+#### Scatter plots of correlations
+
+# Untransformed
 
 for (topic in special_topics) {
   
-  data_sub <- data[data$topic == topic, ]
+  plot_title <- paste("% of Agenda about ", topic, " as a Function of Speech Pct", sep = "")
   
-  # go through the different specifications
-  
-  f_diff <- agenda_pct_diff ~ speech_proportion_diff + log_gdp + temp_member + factor(year)
-
-  f2_diff <- agenda_pct_diff ~ speech_proportion_diff + log_gdp_diff + sc_membership + sc_membership * speech_proportion_diff + factor(year)
-  f3_diff <- agenda_pct_diff ~ speech_proportion_diff + log_gdp_diff + sc_membership + sc_membership * speech_proportion_diff + sc_membership * log_gdp_diff + factor(year)
-  
-  f4_diff <- agenda_pct_diff ~ speech_proportion_diff + log_gdp_diff + sc_membership + sc_membership * speech_proportion_diff + sc_membership * log_gdp_diff + log_gdp_diff * speech_proportion_diff + factor(year)
-  
-  
-  fe_model_f <- plm(formula = f_diff, data = data_sub, index = c_index, effect = "twoways")
-  fe_model_f2 <- plm(formula = f2_diff, data = data_sub, index = c_index, effect = "twoways")
-  fe_model_f3 <- plm(formula = f3_diff, data = data_sub, index = c_index, effect = "twoways")
-  fe_model_f4 <- plm(formula = f4_diff, data = data_sub, index = c_index, effect = "twoways")
-  
-  
-  # output the table for this topic
-  stargazer(fe_model_f, fe_model_f2, fe_model_f3, fe_model_f4, digits = 3, title = paste("Effect of Speeches on Percent of Agenda about ", topic, sep = " "), single.row = FALSE, dep.var.labels = "Percent of Agenda", covariate.labels = c("Speech pct.", "Log GDP", "Not serving on SC", "Speech Pct. * Not serving", "Speech Pct. * Perm. member", "Speech Pct. * Temp. member", "Log GDP * Not serving", "Log GDP * Perm. member", "Log GDP * Temp. member", "Speech Pct. * Log GDP"))
+  pdf(file = paste("untransformed_", topic, ".pdf",  sep = ""), width = 11, height = 8)
+  data_name <- paste("data", topic, sep = "_")
+  plot(agenda_pct ~ speech_proportion, data = get(data_name), ylab = "Percent of agenda", xlab = "Speech Pct", main = plot_title)
+  dev.off()
   
 }
 
-################################################################################################
-# FE with logit transformed main vars
 
-for (topic in special_topics) {
-  
-  data_sub <- data[data$topic == topic, ]
-  
-  # go through the different specifications
-  
-  f_lgt <- agenda_pct_logit ~ speech_pct_logit + log_gdp + temp_member + factor(year)
-  f2_lgt <- agenda_pct_logit ~ speech_pct_logit  + log_gdp + sc_membership + sc_membership * speech_pct_logit + factor(year)
-  f3_lgt <- agenda_pct_logit ~ speech_pct_logit  + log_gdp + sc_membership + sc_membership * speech_pct_logit + sc_membership * log_gdp + factor(year)
-  f4_lgt <- agenda_pct_logit ~ speech_pct_logit + log_gdp + sc_membership + sc_membership * speech_pct_logit + sc_membership * log_gdp + log_gdp * speech_pct_logit + factor(year)
-  
-  
-  
-  fe_model_f <- plm(formula = f_lgt, data = data_sub, index = c_index, effect = "twoways")
-  fe_model_f2 <- plm(formula = f2_lgt, data = data_sub, index = c_index, effect = "twoways")
-  fe_model_f3 <- plm(formula = f3_lgt, data = data_sub, index = c_index, effect = "twoways")
-  fe_model_f4 <- plm(formula = f4_lgt, data = data_sub, index = c_index, effect = "twoways")
-  
-  
-  # output the table for this topic
-  stargazer(fe_model_f, fe_model_f2, fe_model_f3, fe_model_f4, digits = 3, title = paste("Effect of Speeches on Percent of Agenda about ", topic, sep = " "), single.row = FALSE, dep.var.labels = "Percent of Agenda", covariate.labels = c("Speech pct.", "Log GDP", "Not serving on SC", "Speech Pct. * Not serving", "Speech Pct. * Perm. member", "Speech Pct. * Temp. member", "Log GDP * Not serving", "Log GDP * Perm. member", "Log GDP * Temp. member", "Speech Pct. * Log GDP"))
-  
-}
-
-################################################################################################
-#### Scatter plots
-
-topics <- unique(lapply(data$topic, as.character))
-
+# % diff from Mean
 for (topic in special_topics) {
   
   plot_title <- paste("% of Agenda about ", topic, " as a Function of Difference from Yearly Mean of Speech Pct", sep = "")
   
-  pdf(file = paste(topic, "_diff_mean.pdf",  sep = ""), width = 11, height = 8)
+  pdf(file = paste("diff_mean_", topic, ".pdf",  sep = ""), width = 11, height = 8)
   data_name <- paste("data", topic, sep = "_")
-  plot(agenda_pct ~ speech_pct_diff_from_mean, data = get(data_name), ylab = "Percent of agenda", xlab = "Difference from Yearly Mean of Speech Pct", main = plot_title)
+  plot(agenda_pct ~ speech_proportion_diff_from_mean, data = get(data_name), ylab = "Percent of agenda", xlab = "Difference from Yearly Mean of Speech Pct", main = plot_title)
   dev.off()
   
 }
 
-
+# % diff from Median
 for (topic in special_topics) {
   
   plot_title <- paste("% of Agenda about ", topic, " as a Function of Difference from Yearly Median of Speech Pct", sep = "")
   
-  pdf(file = paste(topic, "_diff_median.pdf",  sep = ""), width = 11, height = 8)
+  pdf(file = paste("diff_median_", topic, ".pdf",  sep = ""), width = 11, height = 8)
   data_name <- paste("data", topic, sep = "_")
-  plot(agenda_pct ~ speech_pct_diff_from_median, data = get(data_name), ylab = "Percent of agenda", xlab = "Difference from Yearly Median of Speech Pct", main = plot_title)
+  plot(agenda_pct ~ speech_proportion_diff_from_median, data = get(data_name), ylab = "Percent of agenda", xlab = "Difference from Yearly Median of Speech Pct", main = plot_title)
   dev.off()
   
 }
 
-
+# Zscore
 for (topic in special_topics) {
   
   plot_title <- paste("% of Agenda about ", topic, " as a Function of Z-score of Speech Pct", sep = "")
   
-  pdf(file = paste(topic, "_diff_zscore.pdf",  sep = ""), width = 11, height = 8)
+  pdf(file = paste("diff_zscore_", topic, ".pdf",  sep = ""), width = 11, height = 8)
   data_name <- paste("data", topic, sep = "_")
-  plot(agenda_pct ~ speech_pct_zscore, data = get(data_name), ylab = "Percent of agenda", xlab = "Difference from Z-score of Speech Pct (calculated on yearly basis)", main = plot_title)
+  plot(agenda_pct ~ speech_proportion_zscore, data = get(data_name), ylab = "Percent of agenda", xlab = "Difference from Z-score of Speech Pct (calculated on yearly basis)", main = plot_title)
   dev.off()
   
 }
